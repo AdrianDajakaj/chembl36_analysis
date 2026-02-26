@@ -1,0 +1,23 @@
+services:
+  chembl_db:
+    image: jeffchen94/postgres-rdkit:17-rdkit_2025_09_3-trixie
+    container_name: chembl_container
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${DB_USER:-admin}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-chembl_pass}
+      - POSTGRES_DB=${DB_NAME:-chembl_36}
+    ports:
+      - "5432:5432"
+    volumes:
+      - chembl_postgres_data:/var/lib/postgresql/data
+    mem_limit: 8g
+    cpus: 2.0
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-chembl_36}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  chembl_postgres_data:  

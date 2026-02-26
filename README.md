@@ -30,19 +30,28 @@ chembl36_analysis/
 ## Notebook Outline
 
 1. **Database Connection** — connect to PostgreSQL, sanity checks
+   - 1.1 Connection Config · 1.2 Sanity Check
 2. **Database Info** — schema diagram, 73-table reference with column descriptions
+   - 2.1 Database Schema · 2.2 Table Reference · 2.4 Per-Table Column Reference
 3. **Data Extraction** — single SQL query joining 6 core ChEMBL tables
-4. **Data Cleaning** — missing values, type casting, pIC50 conversion, duplicate handling
-5. **Exploratory Data Analysis** — 12 visualizations with takeaways:
-   - pIC50 distribution, physicochemical features, correlation matrix
-   - IC50 vs Ki comparison, Lipinski Ro5 compliance
-   - Hexbin scatter plots, top target classes, duplicate pair analysis
-   - Outlier analysis, t-SNE chemical space visualization
-   - Compound–target aggregation (median per pair)
-6. **Feature Engineering** — 22 features: ratios, bins, log-transforms, VIF check
+   - 3.1 Overview of the Extracted Data
+4. **Data Cleaning** — duplicates, pIC50 conversion, missing values, outlier removal
+   - 4.1 Exact Duplicates · 4.2 Compute pIC50 · 4.3 Missing Values · 4.4 Drop Missing Rows · 4.5 pIC50 Outlier Removal · 4.6 Cleaning Summary
+5. **Exploratory Data Analysis (EDA)** — 12+ visualizations with takeaways
+   - 5.1 pIC50 Distribution · 5.2 Physicochemical Features · 5.3 Feature Correlations
+   - 5.4 IC50 vs Ki (distribution, statistical test, violin+box)
+   - 5.5 Lipinski Ro5 Compliance · 5.6 Top Correlated Features (scatter, hexbin+KDE)
+   - 5.7 Top Target Classes (bar chart, ridge KDE) · 5.8 Compound–Target Pairs (histogram, std, range, leakage risk)
+   - 5.9 Feature Outlier Analysis + t-SNE Chemical Space Map
+   - 5.10 Compound–Target Aggregation · 5.11 EDA Summary
+6. **Feature Engineering** — 22 features from physicochemical descriptors
+   - 6.1 Drop Redundant & Leaking Features · 6.2 Ratio & Interaction Features · 6.3 Binned Features
+   - 6.4 Encode Categoricals · 6.5 Log-Transform Skewed Features · 6.6 Final Feature Matrix
+   - 6.7 Correlation with pIC50 · 6.8 Multicollinearity Check (VIF) · 6.9 Feature Engineering Summary
 7. **Baseline Models** — Dummy, Ridge, Random Forest, LightGBM
-   - GroupShuffleSplit (no compound leakage)
-   - Feature importance, SHAP analysis, residual diagnostics, learning curve
+   - 7.1 Train/Test Split (GroupShuffleSplit) · 7.2 Model Training · 7.3 Model Comparison
+   - 7.4 Feature Importance · 7.4b SHAP Analysis · 7.5 Predicted vs Actual & Residuals
+   - 7.5b Learning Curve · 7.6 Data Integrity Notes · 7.7 Final Model Summary
 
 ## Prerequisites
 

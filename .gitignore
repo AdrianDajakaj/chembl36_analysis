@@ -11,6 +11,10 @@ data/
 # Python virtual environment
 .venv/
 
+# Local matplotlib / font caches (optional dev dirs)
+.mplconfig/
+.cache/
+
 # Python cache
 __pycache__/
 *.pyc
@@ -18,6 +22,10 @@ __pycache__/
 
 # Jupyter checkpoints
 .ipynb_checkpoints/
+
+# Ramka df przed MLP (duży plik — nie commituj)
+checkpoints/*.parquet
+checkpoints/*.pkl
 
 # macOS
 .DS_Store

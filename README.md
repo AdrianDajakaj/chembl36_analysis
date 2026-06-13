@@ -1,161 +1,200 @@
-# ChEMBL 36 Bioactivity Analysis
+# ChEMBL 36 — analiza bioaktywności i predykcja pIC50 (BRD4)
 
-End-to-end analysis of the [ChEMBL 36](https://www.ebi.ac.uk/chembl/) bioactivity database — from raw SQL extraction through exploratory data analysis to baseline predictive models for pIC50.
+End-to-end projekt QSAR na bazie [ChEMBL 36](https://www.ebi.ac.uk/chembl/): ekstrakcja SQL → czyszczenie → EDA → modele baseline → **MLP (Morgan FP)** → **GIN (graf molekularny)** na celu **BRD4**, z aplikacją **Streamlit + LLM** (function calling, RDKit, MC Dropout).
 
-## Key Results
+## Kluczowe wyniki
 
-| Metric | Value |
-|---|---|
-| Raw dataset | 1,435,971 bioactivity measurements |
-| After aggregation | 1,048,338 unique (compound, target) pairs |
-| Unique compounds | 808,633 |
-| Unique targets | 2,973 |
-| Best model | Random Forest (R² = 0.179, RMSE = 1.182) |
-| Features used | 22 physicochemical descriptors (no structural fingerprints) |
+### Pipeline danych
 
-## Project Structure
+| Etap | Wartość |
+|------|---------|
+| Surowe pomiary IC50/Ki | ~1,5 mln |
+| Po czyszczeniu | 1 435 971 wierszy |
+| Po agregacji (mediana na parę związek–target) | 1 048 338 obserwacji |
+| Unikalne związki | 808 633 |
+| Unikalne targety | 2 973 |
+
+### Model globalny (sekcja 7 — deskryptory fizykochemiczne)
+
+| Model | R² (test) | Uwagi |
+|-------|-----------|--------|
+| Dummy (średnia) | ~0 | baseline |
+| Ridge Regression | 0,09 | |
+| **Random Forest** | **0,18** | najlepszy baseline tabelaryczny |
+| LightGBM | 0,18 | |
+
+Split: GroupShuffleSplit 80/20 po `molregno` (bez wspólnych związków train/test).
+
+### Single-target QSAR — BRD4 (`CHEMBL1163125`)
+
+Zbiór: **7689** pomiarów IC50 z poprawnymi SMILES, split **80/10/10** (random + scaffold Murcko).
+
+| Model | Split | Loss | R² | błąd IC50 (×) |
+|-------|-------|------|-----|---------------|
+| MLP (Morgan FP 2048) | random | MSE | 0,60 | ×5,5 |
+| MLP (Morgan FP) | scaffold | MSE | 0,49 | ×7,6 |
+| GIN (GINEConv) | random | Huber | **0,74** | ×4,0 |
+| GIN (GINEConv) | scaffold | Huber | **0,64** | ×5,5 |
+
+**Próg projektu:** R² > 0,5 — spełniony przez wszystkie warianty GIN (także scaffold).
+
+**Model produkcyjny:** GIN + Huber, random split → `checkpoints/gin_brd4.pt` (sekcja 9.20 notebooka).
+
+Integralność: naprawiono wyciek cech (`bei`/`sei`/`le`/`lle`), wyciek obserwacji (agregacja par) i wyciek związków (GroupShuffleSplit / scaffold).
+
+## Struktura repozytorium
 
 ```
 chembl36_analysis/
-├── analysis.ipynb          # Main analysis notebook (96 cells, fully executable)
-├── docker-compose.yml      # PostgreSQL 17 + RDKit container definition
-├── setup_chembl.sh         # Automated DB download & import script
-├── .env                    # Database credentials (DB_USER, DB_PASSWORD, DB_NAME)
-├── .gitignore
+├── analysis.ipynb              # Główny notebook (sekcje 1–9, ~200+ komórek)
+├── requirements.txt            # Zależności Python (notebook + app)
+├── docker-compose.yml          # PostgreSQL 17 + RDKit
+├── setup_chembl.sh             # Pobieranie i import dumpu ChEMBL 36
+├── .env.example                # Szablon zmiennych (DB, OpenAI)
+├── checkpoints/
+│   └── gin_brd4.pt             # Wytrenowany GIN (BRD4)
+├── app/                        # Aplikacja Streamlit + LLM
+│   ├── streamlit_app.py        # UI: Asystent + Prezentacja projektu
+│   ├── agent.py                # Orkiestracja LLM (OpenAI, tool calling)
+│   ├── tools.py                # Narzędzia LangChain + RDKit
+│   ├── chem_model.py           # GIN + predict_pic50 (+ MC Dropout)
+│   ├── viz.py                  # Wykresy Plotly
+│   ├── assets/presentation/    # Wykresy wyeksportowane z notebooka
+│   └── README.md               # Dokumentacja aplikacji
+├── scripts/                    # Skrypty pomocnicze (TOC notebooka, eksport PNG, …)
 ├── reference/
-│   └── chembl_36_schema.png  # ER diagram of ChEMBL 36
-└── downloads/              # (gitignored) ChEMBL dump files
+│   └── chembl_36_schema.png
+└── downloads/                  # (gitignored) dump PostgreSQL
 ```
 
-## Notebook Outline
+## Notebook — spis treści
 
-1. **Database Connection** — connect to PostgreSQL, sanity checks
-   - 1.1 Connection Config · 1.2 Sanity Check
-2. **Database Info** — schema diagram, 73-table reference with column descriptions
-   - 2.1 Database Schema · 2.2 Table Reference · 2.4 Per-Table Column Reference
-3. **Data Extraction** — single SQL query joining 6 core ChEMBL tables
-   - 3.1 Overview of the Extracted Data
-4. **Data Cleaning** — duplicates, pIC50 conversion, missing values, outlier removal
-   - 4.1 Exact Duplicates · 4.2 Compute pIC50 · 4.3 Missing Values · 4.4 Drop Missing Rows · 4.5 pIC50 Outlier Removal · 4.6 Cleaning Summary
-5. **Exploratory Data Analysis (EDA)** — 12+ visualizations with takeaways
-   - 5.1 pIC50 Distribution · 5.2 Physicochemical Features · 5.3 Feature Correlations
-   - 5.4 IC50 vs Ki (distribution, statistical test, violin+box)
-   - 5.5 Lipinski Ro5 Compliance · 5.6 Top Correlated Features (scatter, hexbin+KDE)
-   - 5.7 Top Target Classes (bar chart, ridge KDE) · 5.8 Compound–Target Pairs (histogram, std, range, leakage risk)
-   - 5.9 Feature Outlier Analysis + t-SNE Chemical Space Map
-   - 5.10 Compound–Target Aggregation · 5.11 EDA Summary
-6. **Feature Engineering** — 22 features from physicochemical descriptors
-   - 6.1 Drop Redundant & Leaking Features · 6.2 Ratio & Interaction Features · 6.3 Binned Features
-   - 6.4 Encode Categoricals · 6.5 Log-Transform Skewed Features · 6.6 Final Feature Matrix
-   - 6.7 Correlation with pIC50 · 6.8 Multicollinearity Check (VIF) · 6.9 Feature Engineering Summary
-7. **Baseline Models** — Dummy, Ridge, Random Forest, LightGBM
-   - 7.1 Train/Test Split (GroupShuffleSplit) · 7.2 Model Training · 7.3 Model Comparison
-   - 7.4 Feature Importance · 7.4b SHAP Analysis · 7.5 Predicted vs Actual & Residuals
-   - 7.5b Learning Curve · 7.6 Data Integrity Notes · 7.7 Final Model Summary
+1. **Połączenie z bazą** — konfiguracja, sanity check  
+2. **Informacje o bazie** — schemat ER, referencja 73 tabel  
+3. **Ekstrakcja danych** — join 6 tabel ChEMBL  
+4. **Czyszczenie** — duplikaty, pIC50, braki, outliery  
+5. **EDA** — rozkłady, korelacje, Lipiński, targety, pary związek–target, t-SNE, agregacja  
+6. **Inżynieria cech** — 22 cechy, usunięcie wyciekających deskryptorów, VIF  
+7. **Modele bazowe** — Dummy, Ridge, RF, LightGBM, SHAP, krzywa uczenia  
+8. **MLP (Morgan FP)** — ECFP 2048, random + scaffold split, wizualizacja wyników  
+   - **8.2b** — zawężenie do targetu BRD4  
+9. **GIN (Graph Isomorphism Network)** — GINEConv, MSE vs Huber, porównanie z MLP  
+   - **9.16** — tabela zbiorcza · **9.19** — mismatch analysis · **9.20** — `predict_pic50` + zapis checkpointu  
 
-## Prerequisites
+Spis treści w notebooku (komórka 1) ma kotwice `#sec-*` — klikalne w Cursor/VS Code.
 
-- **Docker Desktop** (with at least 8 GB RAM allocated)
-- **Python 3.10+** with `pip`
-- ~3 GB free disk space for the ChEMBL 36 database dump
+## Aplikacja Streamlit
 
-## Setup & Installation
+Interfejs z dwoma zakładkami:
 
-### 1. Clone the repository
+- **Asystent** — czat w języku naturalnym + SMILES; LLM wywołuje model GIN i narzędzia RDKit (struktura 2D/3D, deskryptory, mapa podobieństwa vs **JQ1**, MC Dropout).
+- **Prezentacja projektu** — skrót narracji + wykresy z notebooka.
+
+```bash
+# Po instalacji zależności i wygenerowaniu checkpointu (sekcja 9.20):
+cp .env.example .env   # uzupełnij OPENAI_API_KEY
+streamlit run app/streamlit_app.py
+```
+
+Szczegóły: [app/README.md](app/README.md).
+
+Lokalnie (poza gitem): notatki do prezentacji, zestawienia krok po kroku — patrz `.gitignore`.
+
+## Wymagania
+
+- **Docker Desktop** (min. ~8 GB RAM dla kontenera)
+- **Python 3.10+**
+- ~3 GB miejsca na dump ChEMBL 36
+- **GPU** — opcjonalne (trening GIN działa też na CPU; w notebooku użyto PyTorch)
+- **OpenAI API key** — tylko dla zakładki Asystent (LLM)
+
+## Instalacja
+
+### 1. Klon repozytorium
 
 ```bash
 git clone <repo-url>
 cd chembl36_analysis
 ```
 
-### 2. Start the PostgreSQL container
+### 2. Baza danych (PostgreSQL + RDKit)
 
 ```bash
 docker-compose up -d
-```
-
-This pulls the `jeffchen94/postgres-rdkit:17-rdkit_2025_09_3-trixie` image (PostgreSQL 17 + RDKit cartridge) and starts it on **port 5432**.
-
-Verify it's running:
-
-```bash
-docker ps
-# Should show chembl_container with status "Up ... (healthy)"
-```
-
-### 3. Download & import ChEMBL 36
-
-```bash
 chmod +x setup_chembl.sh
 ./setup_chembl.sh
 ```
 
-This script will:
-1. Download `chembl_36_postgresql.tar.gz` (~1.5 GB) from the EBI FTP server
-2. Extract the dump file
-3. Wait for the container to be ready
-4. Import the data via `pg_restore` (takes ~10–20 minutes)
+Import trwa ok. 10–20 min. Obraz: `jeffchen94/postgres-rdkit:17-rdkit_2025_09_3-trixie`, port **5432**.
 
-> **Note:** If the script fails at the import step (e.g., some `pg_restore` warnings about RDKit types), the data is usually imported correctly. You can verify by running the sanity check in the notebook.
-
-### 4. Create a Python virtual environment
+### 3. Środowisko Python
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-### 5. Install Python dependencies
+### 4. Notebook
+
+Otwórz `analysis.ipynb` w VS Code / JupyterLab i uruchom sekwencyjnie (lub **Run All** — sekcje 8–9 wymagają GPU/CPU i ~kilku–kilkunastu minut treningu).
+
+Checkpoint `checkpoints/gin_brd4.pt` powstaje w **sekcji 9.20**. Jeśli jest w repozytorium, aplikacja działa bez ponownego treningu.
+
+### 5. Aplikacja (opcjonalnie)
 
 ```bash
-pip install pandas sqlalchemy psycopg2-binary numpy matplotlib seaborn \
-            scipy scikit-learn lightgbm statsmodels shap ipykernel
+cp .env.example .env
+# Edytuj: OPENAI_API_KEY=..., opcjonalnie OPENAI_MODEL=gpt-4.1
+streamlit run app/streamlit_app.py
 ```
 
-### 6. Run the notebook
+## Połączenie z bazą
 
-Open `analysis.ipynb` in VS Code or JupyterLab and **Run All** cells. The full pipeline takes approximately 5–10 minutes depending on hardware.
+Zmienne w `.env` (Docker Compose):
 
-## Database Credentials
-
-Defined in `.env` (loaded by Docker Compose):
-
-| Variable | Default |
-|---|---|
+| Zmienna | Domyślnie |
+|---------|-----------|
 | `DB_USER` | `admin` |
 | `DB_PASSWORD` | `chembl_pass` |
 | `DB_NAME` | `chembl_36` |
 
-Connection string used in the notebook:
+Connection string w notebooku:
 
 ```
 postgresql+psycopg2://admin:chembl_pass@localhost:5432/chembl_36
 ```
 
-## Stopping & Restarting
+## Docker — start / stop
 
 ```bash
-# Stop the container (data persists in Docker volume)
-docker-compose down
-
-# Restart later (no re-import needed)
-docker-compose up -d
+docker-compose down          # zatrzymaj (dane w volume zostają)
+docker-compose up -d         # wznów
+docker-compose down -v       # usuń volume (wymaga ponownego importu)
 ```
 
-To completely remove all data (including the Docker volume):
+## Stack technologiczny
 
-```bash
-docker-compose down -v
-```
+| Warstwa | Narzędzia |
+|---------|-----------|
+| Baza | PostgreSQL 17, RDKit cartridge, Docker |
+| Dane | ChEMBL 36, pandas, SQLAlchemy |
+| Analiza | NumPy, Matplotlib, Seaborn, SciPy, statsmodels |
+| ML baseline | scikit-learn, LightGBM, SHAP |
+| ML strukturalny | PyTorch, PyTorch Geometric, RDKit (Morgan FP, grafy) |
+| Aplikacja | Streamlit, Plotly, py3Dmol, LangChain, OpenAI API |
+| Notebook | Jupyter / VS Code |
 
-## Tech Stack
+## Skrypty pomocnicze
 
-- **Database:** PostgreSQL 17 + RDKit cartridge (Docker)
-- **Data:** ChEMBL 36 (EBI, 2024)
-- **Python:** pandas, SQLAlchemy, NumPy, Matplotlib, Seaborn, SciPy
-- **ML:** scikit-learn, LightGBM, SHAP
-- **Environment:** Jupyter / VS Code Notebooks
+| Skrypt | Opis |
+|--------|------|
+| `scripts/export_presentation_figures.py` | Eksport wykresów MLP do `app/assets/presentation/` |
+| `scripts/regenerate_toc.py` | Regeneracja spisu treści notebooka |
+| `scripts/fix_toc_navigation.py` | Kotwice w nagłówkach (nawigacja TOC) |
+| `scripts/pick_best_target.py` | Wybór targetu pod single-target QSAR |
+| `scripts/run_from_82.py` | Uruchomienie notebooka od sekcji 8 |
 
-## License
+## Licencja danych
 
-ChEMBL data is provided under the [Creative Commons Attribution-ShareAlike 3.0 Unported License](https://creativecommons.org/licenses/by-sa/3.0/).
+Dane ChEMBL: [Creative Commons Attribution-ShareAlike 3.0](https://creativecommons.org/licenses/by-sa/3.0/).

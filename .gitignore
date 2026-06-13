@@ -29,3 +29,15 @@ checkpoints/*.pkl
 
 # macOS
 .DS_Store
+
+# Notatki i zestawienia robocze (lokalne)
+podsumowanie_modelu.txt
+prezentacja_projektu.md
+zestawienie_notebook_krok_po_kroku.txt
+
+# Debug eksportu wykresów (notebook → PNG)
+app/assets/presentation/_debug/
+
+# Streamlit / logi
+.streamlit/secrets.toml
+*.log
